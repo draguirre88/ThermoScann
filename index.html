@@ -39,6 +39,9 @@
             border-radius: 1rem;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             background-color: #000;
+            /* Aplicar la transformación de espejo a través de CSS para que el video se dibuje volteado */
+            transform-origin: center;
+            transition: transform 0.1s ease-out;
         }
         .loading-overlay {
             position: absolute;
@@ -77,7 +80,7 @@
 </head>
 <body>
 
-    <h1 class="text-3xl font-bold mb-4 text-indigo-400">Cámara Térmica Simulada</h1>
+    <h1 class="text-3xl font-bold mb-4 text-indigo-400">Cámara Podológica Asistida</h1>
 
     <div id="canvas-container">
         <canvas id="canvas"></canvas>
@@ -94,10 +97,16 @@
             <option>Cargando dispositivos...</option>
         </select>
         
+        <!-- Botones de Acción Principal -->
         <div class="flex space-x-2">
             <!-- Botón de Inicio/Cambio -->
             <button id="start-button" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50" disabled>
                 Iniciar/Cambiar Cámara
+            </button>
+            
+            <!-- Botón de Captura de Foto -->
+            <button id="capture-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center" disabled>
+                📷 Capturar Foto
             </button>
             
             <!-- Botón de Análisis Gemini -->
@@ -105,6 +114,30 @@
                 ✨ Analizar Patrón
             </button>
         </div>
+
+        <!-- Botones de Control Visual y Contorno/Medición -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+             <!-- Botón de Espejo -->
+            <button id="mirror-button" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-1 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50" disabled>
+                Espejo OFF
+            </button>
+
+             <!-- Botón de Paleta Inversa -->
+            <button id="palette-button" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-1 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50" disabled>
+                Paleta Normal
+            </button>
+            
+            <!-- NUEVO: Botón de Contorno -->
+            <button id="contour-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-1 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50" disabled>
+                ✏️ Modo Contorno
+            </button>
+
+            <!-- NUEVO: Botón de Cuadrícula -->
+            <button id="grid-button" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-1 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50" disabled>
+                🔳 Mostrar Cuadrícula
+            </button>
+        </div>
+
 
         <div id="status-message" class="text-center text-sm mt-2 text-red-400 min-h-[1.5rem]"></div>
 
@@ -130,7 +163,12 @@
     const ctx = canvas.getContext('2d');
     const select = document.getElementById('camera-select');
     const startButton = document.getElementById('start-button');
+    const captureButton = document.getElementById('capture-button');
     const analyzeButton = document.getElementById('analyze-button');
+    const mirrorButton = document.getElementById('mirror-button');
+    const paletteButton = document.getElementById('palette-button');
+    const contourButton = document.getElementById('contour-button'); // NUEVO
+    const gridButton = document.getElementById('grid-button');     // NUEVO
     const loadingMessage = document.getElementById('loading-message');
     const statusMessage = document.getElementById('status-message');
     const analysisOutput = document.getElementById('analysis-output');
@@ -140,14 +178,17 @@
     let currentStream = null;
     let availableCameras = [];
     let animationFrameId = null;
-
+    let isMirrored = false; 
+    let isPaletteInverted = false; 
+    let isContourMode = false; // ESTADO NUEVO
+    let isGridVisible = false; // ESTADO NUEVO
+    
     // --- Configuración de la Cámara ---
 
     // 1. Obtiene la lista de cámaras disponibles y llena el selector
     async function getCameras() {
         statusMessage.textContent = '';
         try {
-            // Pide permisos para listar dispositivos (es necesario para obtener nombres)
             await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -163,7 +204,6 @@
             availableCameras.forEach( (device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                // Intentamos dar un nombre más descriptivo
                 const label = device.label || `Cámara ${index + 1}`;
                 option.textContent = label.includes('facing back') ? `${label} (Trasera)` : label;
                 select.appendChild(option);
@@ -182,7 +222,6 @@
     // 2. Inicia la transmisión de la cámara seleccionada
     async function startCamera() {
         if (currentStream) {
-            // Detener la transmisión anterior
             currentStream.getTracks().forEach(track => track.stop());
             cancelAnimationFrame(animationFrameId);
             currentStream = null;
@@ -193,13 +232,13 @@
 
         loadingMessage.style.display = 'flex';
         statusMessage.textContent = 'Conectando al lente...';
-        startButton.disabled = true;
-        analyzeButton.disabled = true;
+        // Deshabilitar todos los botones durante la conexión
+        [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = true);
+
 
         const constraints = {
             video: { 
                 deviceId: { exact: deviceId } ,
-                // Opcional: Especificar resolución para mejor rendimiento
                 width: { ideal: 640 }, 
                 height: { ideal: 480 }
             },
@@ -217,8 +256,10 @@
                 canvas.height = video.videoHeight;
                 loadingMessage.style.display = 'none';
                 statusMessage.textContent = 'Cámara lista. Lente: ' + select.options[select.selectedIndex].textContent;
-                startButton.disabled = false;
-                analyzeButton.disabled = false;
+                
+                // Habilitar todos los botones
+                [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
+
                 // Iniciar el ciclo de animación del filtro
                 requestAnimationFrame(processFrame);
             };
@@ -227,31 +268,25 @@
             console.error('Error al obtener stream:', error);
             statusMessage.textContent = 'Error al iniciar la cámara seleccionada. Intenta con otro lente.';
             loadingMessage.style.display = 'none';
+            // Re-habilitar solo el botón de inicio
             startButton.disabled = false;
-            analyzeButton.disabled = true;
         }
     }
 
-    // --- Lógica del Filtro Térmico ---
+    // --- Lógica de Filtros ---
 
-    // Definición de una paleta de colores de calor (Rainbow Palette)
-    // Mapea valores de 0 (frío) a 255 (caliente) a colores RGB
-    function getThermalColor(grayValue) {
+    /**
+     * Define la paleta de colores térmicos (Rainbow Palette).
+     */
+    function getThermalColor(grayValue, isInverted) {
+        let val = grayValue;
+        if (isInverted) {
+            val = 255 - grayValue;
+        }
+
         let r, g, b;
-        
-        // El filtro de simulación asignará:
-        // 0-50 (más oscuro/frío) -> Negro a Azul
-        // 51-100 -> Azul a Cian/Púrpura
-        // 101-150 -> Cian a Rojo
-        // 151-200 -> Rojo a Amarillo
-        // 201-255 (más claro/caliente) -> Amarillo a Blanco
-        
-        // Esta paleta es crucial para que la IA interprete el "calor"
-        // Blanco/Amarillo = Simulación de más caliente.
-        // Azul/Negro = Simulación de más frío.
-
-        const i = Math.floor(grayValue / 50); // Divide el rango 0-255 en 5 secciones
-        const f = (grayValue % 50) / 50; // Posición dentro de la sección
+        const i = Math.floor(val / 50); 
+        const f = (val % 50) / 50; 
 
         switch (i) {
             case 0: // Negro a Azul (0-50)
@@ -268,7 +303,7 @@
                 break;
             case 4: // Amarillo a Blanco (201-255)
             case 5:
-                const whiteFactor = Math.min(1, (grayValue - 200) / 55); // Aceleramos a blanco
+                const whiteFactor = Math.min(1, (val - 200) / 55); 
                 r = 255; g = 255; b = 200 + 55 * whiteFactor; 
                 break;
             default:
@@ -278,47 +313,237 @@
         return {r: Math.floor(r), g: Math.floor(g), b: Math.floor(b)};
     }
     
-    // 3. Procesa el cuadro de video y aplica el filtro
+    /**
+     * Filtro de Detección de Contornos (Edge Detection)
+     */
+    function processContourFrame(imageData) {
+        const data = imageData.data;
+        const width = imageData.width;
+        const height = imageData.height;
+        const outputData = new Uint8ClampedArray(data.length);
+
+        // Umbral de sensibilidad para detectar un borde (ajustable)
+        const threshold = 20; 
+
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const i = (y * width + x) * 4;
+                const i_up = ((y - 1) * width + x) * 4;
+                const i_down = ((y + 1) * width + x) * 4;
+                const i_left = (y * width + (x - 1)) * 4;
+                const i_right = (y * width + (x + 1)) * 4;
+
+                // Función de luminosidad (Luma) para obtener el gris del pixel
+                const luma = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b);
+
+                const center_luma = luma(data[i], data[i+1], data[i+2]);
+                const up_luma = luma(data[i_up], data[i_up+1], data[i_up+2]);
+                const down_luma = luma(data[i_down], data[i_down+1], data[i_down+2]);
+                const left_luma = luma(data[i_left], data[i_left+1], data[i_left+2]);
+                const right_luma = luma(data[i_right], data[i_right+1], data[i_right+2]);
+
+                // Gradiente horizontal y vertical (aproximación)
+                const grad_x = Math.abs(right_luma - left_luma);
+                const grad_y = Math.abs(up_luma - down_luma);
+                const total_grad = Math.max(grad_x, grad_y);
+
+                let color = 0;
+                if (total_grad > threshold) {
+                    color = 255; // Borde detectado: blanco
+                }
+
+                outputData[i] = color;
+                outputData[i + 1] = color;
+                outputData[i + 2] = color;
+                outputData[i + 3] = 255; // Alpha
+            }
+        }
+        
+        // Copiar los datos de vuelta al imageData
+        for (let i = 0; i < data.length; i++) {
+            if ((i + 1) % 4 !== 0) { // Copiar solo RGB, ignorar el Alpha original
+                data[i] = outputData[i];
+            }
+        }
+    }
+    
+    // --- Lógica de Dibujo de Cuadrícula ---
+    
+    function drawGrid(ctx, width, height) {
+        if (!isGridVisible) return;
+
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)'; // Líneas amarillas brillantes
+        ctx.lineWidth = 1;
+        
+        // Dibuja una cuadrícula de 4x3 (para alinearse con el aspect-ratio ideal)
+        const numLinesX = 4; 
+        const numLinesY = 3;
+        
+        // Líneas Verticales (eje X)
+        for (let i = 1; i < numLinesX; i++) {
+            const x = (width / numLinesX) * i;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+
+        // Líneas Horizontales (eje Y)
+        for (let i = 1; i < numLinesY; i++) {
+            const y = (height / numLinesY) * i;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+        
+        // Dibuja la línea central
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'; // Línea central roja
+        ctx.lineWidth = 2;
+        
+        // Eje vertical central
+        ctx.beginPath();
+        ctx.moveTo(width / 2, 0);
+        ctx.lineTo(width / 2, height);
+        ctx.stroke();
+        
+        // Eje horizontal central
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+    }
+
+
+    // 3. Función principal de procesamiento de cuadro
     function processFrame() {
         if (video.paused || video.ended) return;
 
-        // Dibuja el cuadro de video en el canvas temporalmente
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Obtiene los datos de los píxeles
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
-        const length = data.length;
+        
+        if (isContourMode) {
+            // Modo Contorno
+            processContourFrame(imageData);
+        } else {
+            // Modo Térmico (original)
+            const length = data.length;
+            for (let i = 0; i < length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                const gray = (0.2126 * r + 0.7152 * g + 0.0722 * b); 
+                const color = getThermalColor(gray, isPaletteInverted); 
 
-        for (let i = 0; i < length; i += 4) {
-            // Obtener el valor de luminosidad (escala de grises)
-            // Luma (HDTV formula): 0.2126*R + 0.7152*G + 0.0722*B
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            
-            const gray = (0.2126 * r + 0.7152 * g + 0.0722 * b);
-            
-            // Mapear el valor de escala de grises a un color de la paleta térmica
-            const color = getThermalColor(gray);
-
-            // Aplicar el nuevo color
-            data[i] = color.r;      // R
-            data[i + 1] = color.g;  // G
-            data[i + 2] = color.b;  // B
-            // data[i + 3] ya es Alpha (transparencia), se mantiene en 255
+                data[i] = color.r;
+                data[i + 1] = color.g;
+                data[i + 2] = color.b;
+            }
         }
-
-        // Vuelve a dibujar la imagen procesada en el canvas
+        
         ctx.putImageData(imageData, 0, 0);
 
-        // Repetir para el siguiente cuadro de video
+        // DIBUJAR CUADRÍCULA SOBRE EL FILTRO
+        drawGrid(ctx, canvas.width, canvas.height); 
+
         animationFrameId = requestAnimationFrame(processFrame);
     }
+    
+    // --- Lógica de Captura de Foto y Control Visual (Sin Cambios) ---
+
+    function capturePhoto() {
+        if (canvas.width === 0 || canvas.height === 0) {
+            statusMessage.textContent = 'Error: No hay cámara activa para capturar.';
+            return;
+        }
+        
+        const dataURL = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        
+        const date = new Date();
+        const filename = `Pisada_Termica_${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}_${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}${date.getSeconds().toString().padStart(2, '0')}.png`;
+        
+        a.href = dataURL;
+        a.download = filename;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        statusMessage.textContent = `Foto capturada: ${filename}. Búscala en tu carpeta de descargas.`;
+        
+        canvas.style.filter = 'brightness(0.8)';
+        setTimeout(() => { canvas.style.filter = 'brightness(1)'; }, 200);
+    }
+
+    function toggleMirror() {
+        isMirrored = !isMirrored;
+        if (isMirrored) {
+            canvas.style.transform = 'scaleX(-1)';
+            mirrorButton.textContent = 'Espejo ON';
+            mirrorButton.classList.remove('bg-gray-600');
+            mirrorButton.classList.add('bg-gray-800');
+        } else {
+            canvas.style.transform = 'scaleX(1)';
+            mirrorButton.textContent = 'Espejo OFF';
+            mirrorButton.classList.remove('bg-gray-800');
+            mirrorButton.classList.add('bg-gray-600');
+        }
+    }
+
+    function togglePalette() {
+        isPaletteInverted = !isPaletteInverted;
+        if (isPaletteInverted) {
+            paletteButton.textContent = 'Paleta Inversa ON';
+            paletteButton.classList.remove('bg-purple-600');
+            paletteButton.classList.add('bg-purple-800');
+        } else {
+            paletteButton.textContent = 'Paleta Normal';
+            paletteButton.classList.remove('bg-purple-800');
+            paletteButton.classList.add('bg-purple-600');
+        }
+    }
+    
+    // NUEVO: Alternar Modo Contorno
+    function toggleContour() {
+        isContourMode = !isContourMode;
+        if (isContourMode) {
+            contourButton.textContent = 'Modo Contorno ON';
+            contourButton.classList.remove('bg-red-600');
+            contourButton.classList.add('bg-red-800');
+            // Deshabilitar botones de color cuando está en contorno
+            paletteButton.disabled = true;
+            paletteButton.classList.add('opacity-50');
+        } else {
+            contourButton.textContent = '✏️ Modo Contorno';
+            contourButton.classList.remove('bg-red-800');
+            contourButton.classList.add('bg-red-600');
+            // Habilitar botones de color cuando está en modo térmico
+            paletteButton.disabled = false;
+            paletteButton.classList.remove('opacity-50');
+        }
+    }
+    
+    // NUEVO: Alternar Visibilidad de Cuadrícula
+    function toggleGrid() {
+        isGridVisible = !isGridVisible;
+        if (isGridVisible) {
+            gridButton.textContent = 'Cuadrícula ON';
+            gridButton.classList.remove('bg-yellow-600');
+            gridButton.classList.add('bg-yellow-800');
+        } else {
+            gridButton.textContent = '🔳 Mostrar Cuadrícula';
+            gridButton.classList.remove('bg-yellow-800');
+            gridButton.classList.add('bg-yellow-600');
+        }
+    }
+
 
     // --- Lógica de Integración con Gemini (LLM) ---
     
-    const API_KEY = ""; // La clave API será proporcionada por el entorno
+    const API_KEY = ""; 
     const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
 
     /**
@@ -328,18 +553,30 @@
         analysisOutput.classList.remove('hidden');
         analysisText.textContent = '';
         analysisSpinner.classList.remove('hidden');
-        analyzeButton.disabled = true;
+        
+        // Deshabilitar todos los botones durante el análisis
+        [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = true);
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
         
-        const systemPrompt = `Eres un experto en análisis de imágenes térmicas simuladas. Tu tarea es describir la escena de la imagen y analizar la distribución de colores como si fueran temperaturas. 
-        Reglas de interpretación de "calor":
-        - Blanco / Amarillo: Simulan la temperatura MÁS ALTA.
-        - Rojo / Naranja: Simulan temperaturas cálidas/intermedias.
-        - Azul / Negro: Simulan la temperatura MÁS BAJA o el fondo.
-        Describe la escena, indicando qué objetos o áreas son los más "calientes" (blancos/amarillos) y los más "fríos" (azules/negros) según esta paleta de colores. Responde en español de forma concisa.`;
+        // Ajustar el prompt para que funcione con cualquier modo (Térmico o Contorno)
+        let pressureInterpretation = "";
+        if (isContourMode) {
+            pressureInterpretation = "La imagen está en Modo Contorno (blanco y negro). El blanco indica bordes de alta variación de luz/presión, mientras que el negro es el fondo o áreas uniformes.";
+        } else {
+             pressureInterpretation = isPaletteInverted 
+                ? "La paleta está INVERTIDA. El blanco/amarillo representa BAJA presión (poca luz) y el azul/negro representa ALTA presión (mucha luz)."
+                : "La paleta está NORMAL. El blanco/amarillo representa ALTA presión (mucha luz) y el azul/negro representa BAJA presión (poca luz, como el arco plantar).";
+        }
         
-        const userQuery = "Analiza esta imagen de cámara térmica simulada. ¿Qué ves y cómo se distribuye el calor?";
+        const systemPrompt = `Eres un experto en análisis de imágenes de huellas plantares. Tu tarea es describir la huella plantar visible.
+        
+        Reglas de interpretación de la imagen:
+        ${pressureInterpretation}
+
+        Describe la forma general de la huella, la distribución de la presión (basándote en las reglas anteriores), y cualquier característica visible que pueda indicar un pie plano, cavo, o una distribución normal de la carga. Responde en español de forma concisa.`;
+        
+        const userQuery = "Analiza esta imagen de huella plantar.";
         
         const payload = {
             contents: [
@@ -380,7 +617,7 @@
 
                 if (candidate && candidate.content?.parts?.[0]?.text) {
                     resultText = candidate.content.parts[0].text;
-                    break; // Salir del bucle si es exitoso
+                    break; 
                 } else {
                     throw new Error("Respuesta del modelo incompleta o vacía.");
                 }
@@ -390,13 +627,16 @@
                 if (attempt === 4) {
                     resultText = `Error al conectar o procesar la imagen con Gemini. Intenta de nuevo. (${error.message})`;
                 }
-                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); // Espera exponencial
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); 
             }
         }
         
         analysisSpinner.classList.add('hidden');
         analysisText.textContent = resultText;
-        analyzeButton.disabled = false;
+        // Habilitar todos los botones al finalizar
+        [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
+        // Si estaba en modo Contorno, el botón de paleta debe permanecer deshabilitado.
+        if (isContourMode) paletteButton.disabled = true;
     }
 
     /**
@@ -409,26 +649,21 @@
             return;
         }
 
-        // Captura el contenido del canvas como un Data URL (base64)
         const dataURL = canvas.toDataURL('image/png');
-        
-        // Extrae solo la parte base64
         const base64Image = dataURL.split(',')[1];
-
-        // Llama a la función de análisis con la imagen
         callGeminiAPI(base64Image);
     }
 
     // --- Inicialización y Eventos ---
     
-    // Iniciar la detección de cámaras
     window.onload = getCameras;
-
-    // Al hacer clic en el botón, iniciar la cámara seleccionada
     startButton.addEventListener('click', startCamera);
-    
-    // Al hacer clic en el botón de análisis
+    captureButton.addEventListener('click', capturePhoto); 
     analyzeButton.addEventListener('click', captureAndAnalyze);
+    mirrorButton.addEventListener('click', toggleMirror); 
+    paletteButton.addEventListener('click', togglePalette); 
+    contourButton.addEventListener('click', toggleContour); // Evento NUEVO
+    gridButton.addEventListener('click', toggleGrid);       // Evento NUEVO
 
 </script>
 </body>
