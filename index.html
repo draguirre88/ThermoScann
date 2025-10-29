@@ -183,8 +183,9 @@
     let isGridVisible = false; 
     
     // --- IMPORTANTE: CONFIGURACIÓN DE LA API KEY ---
-    // CLAVE DE API INSERTADA AQUÍ
-    const API_KEY = "AIzaSyDR9hbRchIWZVMYPQYMT1nLat0BC40U65E"; 
+    // La clave ha sido removida por seguridad.
+    // PEGA AQUÍ TU CLAVE DE API REAL antes de compilar el APK.
+    const API_KEY = ""; 
     const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
     // --- FIN CONFIGURACIÓN DE LA API KEY ---
 
@@ -524,7 +525,7 @@
         
         if (API_KEY === "") {
             analysisSpinner.classList.add('hidden');
-            analysisText.textContent = "Error 403: API Key ausente. Por favor, pega tu llave real en la variable 'API_KEY' dentro del código.";
+            analysisText.textContent = "Error 403: API Key ausente. Por favor, pega tu llave REAL en el código fuente de tu APK antes de compilar.";
             [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
             return;
         }
