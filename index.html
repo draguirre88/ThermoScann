@@ -183,10 +183,8 @@
     let isGridVisible = false; 
     
     // --- IMPORTANTE: CONFIGURACIÓN DE LA API KEY ---
-    // La clave ha sido removida por seguridad.
-    // PEGA AQUÍ TU CLAVE DE API REAL antes de compilar el APK.
-    const API_KEY = ""; 
-    const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+    // La API Key ya NO se almacena aquí. Se llama a un servicio proxy (/api/gemini_proxy)
+    // para manejar la clave de forma segura en el servidor.
     // --- FIN CONFIGURACIÓN DE LA API KEY ---
 
     // --- Configuración de la Cámara ---
@@ -513,26 +511,20 @@
     }
 
 
-    // --- Lógica de Integración con Gemini (LLM) ---
+    // --- Lógica de Integración con Gemini (LLM) a través del Proxy ---
     
     /**
-     * Llama a la API de Gemini con la imagen capturada para análisis.
+     * Llama al servicio de proxy (/api/gemini_proxy) con la imagen capturada para análisis.
      */
     async function callGeminiAPI(base64Image) {
         analysisOutput.classList.remove('hidden');
         analysisText.textContent = '';
         analysisSpinner.classList.remove('hidden');
         
-        if (API_KEY === "") {
-            analysisSpinner.classList.add('hidden');
-            analysisText.textContent = "Error 403: API Key ausente. Por favor, pega tu llave REAL en el código fuente de tu APK antes de compilar.";
-            [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
-            return;
-        }
-
         [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = true);
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+        // La URL relativa llama a la función serverless del proxy
+        const proxyUrl = '/api/gemini_proxy'; 
         
         let pressureInterpretation = "";
         if (isContourMode) {
@@ -553,54 +545,39 @@
         const userQuery = "Analiza esta imagen de huella plantar.";
         
         const payload = {
-            contents: [
-                {
-                    role: "user",
-                    parts: [
-                        { text: userQuery },
-                        {
-                            inlineData: {
-                                mimeType: "image/png",
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }
-            ],
-            systemInstruction: {
-                parts: [{ text: systemPrompt }]
-            },
+            base64Image: base64Image,
+            systemPrompt: systemPrompt,
+            userQuery: userQuery
         };
 
         let resultText = "Error: No se pudo obtener la respuesta.";
         
         for (let attempt = 0; attempt < 5; attempt++) {
             try {
-                const response = await fetch(apiUrl, {
+                const response = await fetch(proxyUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
+                const data = await response.json();
+
                 if (!response.ok) {
-                    const errorStatus = response.status;
-                    throw new Error(`HTTP error! status ${errorStatus}`);
+                    // Muestra el error devuelto por el proxy
+                    throw new Error(data.error || `HTTP error! status ${response.status}`);
                 }
                 
-                const result = await response.json();
-                const candidate = result.candidates?.[0];
-
-                if (candidate && candidate.content?.parts?.[0]?.text) {
-                    resultText = candidate.content.parts[0].text;
+                if (data.analysis) {
+                    resultText = data.analysis;
                     break; 
                 } else {
-                    throw new Error("Respuesta del modelo incompleta o vacía.");
+                    throw new Error("Respuesta del proxy incompleta o vacía.");
                 }
 
             } catch (error) {
-                console.error(`Intento ${attempt + 1}: Error al llamar a la API de Gemini:`, error);
+                console.error(`Intento ${attempt + 1}: Error al llamar al Proxy:`, error);
                 if (attempt === 4) {
-                    resultText = `Error al conectar o procesar la imagen con Gemini. Intenta de nuevo: ${error.message}`;
+                    resultText = `Error al conectar o procesar la imagen con el Proxy. Causa: ${error.message}. Asegúrate de que el proxy está desplegado y la clave GEMINI_API_KEY está configurada en el servidor (ej: Vercel).`;
                 }
                 await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); 
             }
