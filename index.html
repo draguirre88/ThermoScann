@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simulador de Cámara Térmica</title>
+    <title>Cámara Podológica Asistida (v3)</title>
     <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -27,8 +27,8 @@
         /* Contenedor principal que mantiene el aspecto ratio del video */
         #canvas-container {
             width: 100%;
-            max-width: 90vh; /* Para que sea más ancho que alto en móvil si es necesario */
-            aspect-ratio: 4/3; /* O usa 16/9, ajusta según el lente de tu móvil */
+            max-width: 90vh; 
+            aspect-ratio: 4/3; 
             position: relative;
             margin-bottom: 1rem;
         }
@@ -39,7 +39,6 @@
             border-radius: 1rem;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             background-color: #000;
-            /* Aplicar la transformación de espejo a través de CSS para que el video se dibuje volteado */
             transform-origin: center;
             transition: transform 0.1s ease-out;
         }
@@ -59,7 +58,7 @@
         .ai-loading-bar {
             width: 80%;
             height: 8px;
-            background-color: #4f46e5; /* Índigo */
+            background-color: #4f46e5;
             border-radius: 4px;
             overflow: hidden;
             margin-top: 1rem;
@@ -69,7 +68,7 @@
             display: block;
             height: 100%;
             width: 20%;
-            background-color: #a5b4fc; /* Índigo claro */
+            background-color: #a5b4fc;
             animation: move-bar 1.5s infinite linear;
         }
         @keyframes move-bar {
@@ -127,12 +126,12 @@
                 Paleta Normal
             </button>
             
-            <!-- NUEVO: Botón de Contorno -->
+            <!-- Botón de Contorno -->
             <button id="contour-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-1 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50" disabled>
                 ✏️ Modo Contorno
             </button>
 
-            <!-- NUEVO: Botón de Cuadrícula -->
+            <!-- Botón de Cuadrícula -->
             <button id="grid-button" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-1 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50" disabled>
                 🔳 Mostrar Cuadrícula
             </button>
@@ -167,8 +166,8 @@
     const analyzeButton = document.getElementById('analyze-button');
     const mirrorButton = document.getElementById('mirror-button');
     const paletteButton = document.getElementById('palette-button');
-    const contourButton = document.getElementById('contour-button'); // NUEVO
-    const gridButton = document.getElementById('grid-button');     // NUEVO
+    const contourButton = document.getElementById('contour-button');
+    const gridButton = document.getElementById('grid-button');
     const loadingMessage = document.getElementById('loading-message');
     const statusMessage = document.getElementById('status-message');
     const analysisOutput = document.getElementById('analysis-output');
@@ -180,12 +179,17 @@
     let animationFrameId = null;
     let isMirrored = false; 
     let isPaletteInverted = false; 
-    let isContourMode = false; // ESTADO NUEVO
-    let isGridVisible = false; // ESTADO NUEVO
+    let isContourMode = false; 
+    let isGridVisible = false; 
     
+    // --- IMPORTANTE: CONFIGURACIÓN DE LA API KEY ---
+    // CLAVE DE API INSERTADA AQUÍ
+    const API_KEY = "AIzaSyDR9hbRchIWZVMYPQYMT1nLat0BC40U65E"; 
+    const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+    // --- FIN CONFIGURACIÓN DE LA API KEY ---
+
     // --- Configuración de la Cámara ---
 
-    // 1. Obtiene la lista de cámaras disponibles y llena el selector
     async function getCameras() {
         statusMessage.textContent = '';
         try {
@@ -199,7 +203,6 @@
                 return;
             }
 
-            // Llenar el <select>
             select.innerHTML = '';
             availableCameras.forEach( (device, index) => {
                 const option = document.createElement('option');
@@ -219,7 +222,6 @@
         }
     }
 
-    // 2. Inicia la transmisión de la cámara seleccionada
     async function startCamera() {
         if (currentStream) {
             currentStream.getTracks().forEach(track => track.stop());
@@ -232,7 +234,6 @@
 
         loadingMessage.style.display = 'flex';
         statusMessage.textContent = 'Conectando al lente...';
-        // Deshabilitar todos los botones durante la conexión
         [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = true);
 
 
@@ -251,16 +252,13 @@
             video.srcObject = stream;
             
             video.onloadedmetadata = () => {
-                // Ajustar el canvas al tamaño del video
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 loadingMessage.style.display = 'none';
                 statusMessage.textContent = 'Cámara lista. Lente: ' + select.options[select.selectedIndex].textContent;
                 
-                // Habilitar todos los botones
                 [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
 
-                // Iniciar el ciclo de animación del filtro
                 requestAnimationFrame(processFrame);
             };
 
@@ -268,16 +266,12 @@
             console.error('Error al obtener stream:', error);
             statusMessage.textContent = 'Error al iniciar la cámara seleccionada. Intenta con otro lente.';
             loadingMessage.style.display = 'none';
-            // Re-habilitar solo el botón de inicio
             startButton.disabled = false;
         }
     }
 
     // --- Lógica de Filtros ---
 
-    /**
-     * Define la paleta de colores térmicos (Rainbow Palette).
-     */
     function getThermalColor(grayValue, isInverted) {
         let val = grayValue;
         if (isInverted) {
@@ -289,19 +283,19 @@
         const f = (val % 50) / 50; 
 
         switch (i) {
-            case 0: // Negro a Azul (0-50)
+            case 0:
                 r = 0; g = 0; b = 255 * f;
                 break;
-            case 1: // Azul a Cian/Púrpura (51-100)
+            case 1:
                 r = 0; g = 255 * f; b = 255 * (1 - f);
                 break;
-            case 2: // Cian a Rojo (101-150)
+            case 2:
                 r = 255 * f; g = 255 * (1 - f); b = 0;
                 break;
-            case 3: // Rojo a Amarillo (151-200)
+            case 3:
                 r = 255; g = 255 * f; b = 0;
                 break;
-            case 4: // Amarillo a Blanco (201-255)
+            case 4:
             case 5:
                 const whiteFactor = Math.min(1, (val - 200) / 55); 
                 r = 255; g = 255; b = 200 + 55 * whiteFactor; 
@@ -313,16 +307,12 @@
         return {r: Math.floor(r), g: Math.floor(g), b: Math.floor(b)};
     }
     
-    /**
-     * Filtro de Detección de Contornos (Edge Detection)
-     */
     function processContourFrame(imageData) {
         const data = imageData.data;
         const width = imageData.width;
         const height = imageData.height;
         const outputData = new Uint8ClampedArray(data.length);
 
-        // Umbral de sensibilidad para detectar un borde (ajustable)
         const threshold = 20; 
 
         for (let y = 1; y < height - 1; y++) {
@@ -333,7 +323,6 @@
                 const i_left = (y * width + (x - 1)) * 4;
                 const i_right = (y * width + (x + 1)) * 4;
 
-                // Función de luminosidad (Luma) para obtener el gris del pixel
                 const luma = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b);
 
                 const center_luma = luma(data[i], data[i+1], data[i+2]);
@@ -342,44 +331,38 @@
                 const left_luma = luma(data[i_left], data[i_left+1], data[i_left+2]);
                 const right_luma = luma(data[i_right], data[i_right+1], data[i_right+2]);
 
-                // Gradiente horizontal y vertical (aproximación)
                 const grad_x = Math.abs(right_luma - left_luma);
                 const grad_y = Math.abs(up_luma - down_luma);
                 const total_grad = Math.max(grad_x, grad_y);
 
                 let color = 0;
                 if (total_grad > threshold) {
-                    color = 255; // Borde detectado: blanco
+                    color = 255;
                 }
 
                 outputData[i] = color;
                 outputData[i + 1] = color;
                 outputData[i + 2] = color;
-                outputData[i + 3] = 255; // Alpha
+                outputData[i + 3] = 255;
             }
         }
         
-        // Copiar los datos de vuelta al imageData
         for (let i = 0; i < data.length; i++) {
-            if ((i + 1) % 4 !== 0) { // Copiar solo RGB, ignorar el Alpha original
+            if ((i + 1) % 4 !== 0) {
                 data[i] = outputData[i];
             }
         }
     }
     
-    // --- Lógica de Dibujo de Cuadrícula ---
-    
     function drawGrid(ctx, width, height) {
         if (!isGridVisible) return;
 
-        ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)'; // Líneas amarillas brillantes
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
         ctx.lineWidth = 1;
         
-        // Dibuja una cuadrícula de 4x3 (para alinearse con el aspect-ratio ideal)
         const numLinesX = 4; 
         const numLinesY = 3;
         
-        // Líneas Verticales (eje X)
         for (let i = 1; i < numLinesX; i++) {
             const x = (width / numLinesX) * i;
             ctx.beginPath();
@@ -388,7 +371,6 @@
             ctx.stroke();
         }
 
-        // Líneas Horizontales (eje Y)
         for (let i = 1; i < numLinesY; i++) {
             const y = (height / numLinesY) * i;
             ctx.beginPath();
@@ -397,17 +379,14 @@
             ctx.stroke();
         }
         
-        // Dibuja la línea central
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'; // Línea central roja
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
         ctx.lineWidth = 2;
         
-        // Eje vertical central
         ctx.beginPath();
         ctx.moveTo(width / 2, 0);
         ctx.lineTo(width / 2, height);
         ctx.stroke();
         
-        // Eje horizontal central
         ctx.beginPath();
         ctx.moveTo(0, height / 2);
         ctx.lineTo(width, height / 2);
@@ -415,19 +394,16 @@
     }
 
 
-    // 3. Función principal de procesamiento de cuadro
     function processFrame() {
         if (video.paused || video.ended) return;
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
         
         if (isContourMode) {
-            // Modo Contorno
             processContourFrame(imageData);
         } else {
-            // Modo Térmico (original)
+            const data = imageData.data;
             const length = data.length;
             for (let i = 0; i < length; i += 4) {
                 const r = data[i];
@@ -445,13 +421,12 @@
         
         ctx.putImageData(imageData, 0, 0);
 
-        // DIBUJAR CUADRÍCULA SOBRE EL FILTRO
         drawGrid(ctx, canvas.width, canvas.height); 
 
         animationFrameId = requestAnimationFrame(processFrame);
     }
     
-    // --- Lógica de Captura de Foto y Control Visual (Sin Cambios) ---
+    // --- Lógica de Captura y Control Visual ---
 
     function capturePhoto() {
         if (canvas.width === 0 || canvas.height === 0) {
@@ -506,27 +481,23 @@
         }
     }
     
-    // NUEVO: Alternar Modo Contorno
     function toggleContour() {
         isContourMode = !isContourMode;
         if (isContourMode) {
             contourButton.textContent = 'Modo Contorno ON';
             contourButton.classList.remove('bg-red-600');
             contourButton.classList.add('bg-red-800');
-            // Deshabilitar botones de color cuando está en contorno
             paletteButton.disabled = true;
             paletteButton.classList.add('opacity-50');
         } else {
             contourButton.textContent = '✏️ Modo Contorno';
             contourButton.classList.remove('bg-red-800');
             contourButton.classList.add('bg-red-600');
-            // Habilitar botones de color cuando está en modo térmico
             paletteButton.disabled = false;
             paletteButton.classList.remove('opacity-50');
         }
     }
     
-    // NUEVO: Alternar Visibilidad de Cuadrícula
     function toggleGrid() {
         isGridVisible = !isGridVisible;
         if (isGridVisible) {
@@ -543,9 +514,6 @@
 
     // --- Lógica de Integración con Gemini (LLM) ---
     
-    const API_KEY = ""; 
-    const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
-
     /**
      * Llama a la API de Gemini con la imagen capturada para análisis.
      */
@@ -554,12 +522,17 @@
         analysisText.textContent = '';
         analysisSpinner.classList.remove('hidden');
         
-        // Deshabilitar todos los botones durante el análisis
+        if (API_KEY === "") {
+            analysisSpinner.classList.add('hidden');
+            analysisText.textContent = "Error 403: API Key ausente. Por favor, pega tu llave real en la variable 'API_KEY' dentro del código.";
+            [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
+            return;
+        }
+
         [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = true);
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
         
-        // Ajustar el prompt para que funcione con cualquier modo (Térmico o Contorno)
         let pressureInterpretation = "";
         if (isContourMode) {
             pressureInterpretation = "La imagen está en Modo Contorno (blanco y negro). El blanco indica bordes de alta variación de luz/presión, mientras que el negro es el fondo o áreas uniformes.";
@@ -609,7 +582,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorStatus = response.status;
+                    throw new Error(`HTTP error! status ${errorStatus}`);
                 }
                 
                 const result = await response.json();
@@ -625,7 +599,7 @@
             } catch (error) {
                 console.error(`Intento ${attempt + 1}: Error al llamar a la API de Gemini:`, error);
                 if (attempt === 4) {
-                    resultText = `Error al conectar o procesar la imagen con Gemini. Intenta de nuevo. (${error.message})`;
+                    resultText = `Error al conectar o procesar la imagen con Gemini. Intenta de nuevo: ${error.message}`;
                 }
                 await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); 
             }
@@ -633,15 +607,10 @@
         
         analysisSpinner.classList.add('hidden');
         analysisText.textContent = resultText;
-        // Habilitar todos los botones al finalizar
         [startButton, captureButton, analyzeButton, mirrorButton, paletteButton, contourButton, gridButton].forEach(btn => btn.disabled = false);
-        // Si estaba en modo Contorno, el botón de paleta debe permanecer deshabilitado.
         if (isContourMode) paletteButton.disabled = true;
     }
 
-    /**
-     * Captura el frame actual del canvas y llama a la función de análisis.
-     */
     function captureAndAnalyze() {
         if (canvas.width === 0 || canvas.height === 0) {
             analysisText.textContent = "Error: La cámara no está activa o el canvas está vacío.";
@@ -662,8 +631,8 @@
     analyzeButton.addEventListener('click', captureAndAnalyze);
     mirrorButton.addEventListener('click', toggleMirror); 
     paletteButton.addEventListener('click', togglePalette); 
-    contourButton.addEventListener('click', toggleContour); // Evento NUEVO
-    gridButton.addEventListener('click', toggleGrid);       // Evento NUEVO
+    contourButton.addEventListener('click', toggleContour);
+    gridButton.addEventListener('click', toggleGrid);
 
 </script>
 </body>
